@@ -25,7 +25,7 @@ def load_model():
     """
     global processor, model
 
-    MODEL_ID = "Salesforce/blip-image-captioning-large"
+    MODEL_ID = "Salesforce/blip-image-captioning-base"
     print(f"Loading {MODEL_ID} (large model — more accurate, first run downloads ~1.9GB)...")
 
     processor = BlipProcessor.from_pretrained(MODEL_ID)
