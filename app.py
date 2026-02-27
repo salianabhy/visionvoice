@@ -62,7 +62,7 @@ def ensure_model_loaded():
 @app.route("/", methods=["GET"])
 def health_check():
     """
-    Health check endpoint — open http://localhost:5001 in a browser
+    Health check endpoint — open http://localhost:5000 in a browser
     to confirm the backend is running before starting the frontend.
     """
     return jsonify({
@@ -173,13 +173,10 @@ def serve_audio(filename):
     """Serve generated MP3 audio files to the frontend."""
     return send_from_directory(AUDIO_DIR, filename, mimetype="audio/mpeg")
 
-
 # ── Run Server ────────────────────────────────────────────────────────────────
+# Replace the last line of app.py with this:
 if __name__ == "__main__":
-    print("=" * 55)
-    print("  VisionVoice Backend starting...")
-    print("  Open http://localhost:5001 to confirm it's running")
-    print("  Then open http://localhost:3000 for the frontend")
-    print("=" * 55)
-    # debug=False for stability; host=0.0.0.0 so any device on your network can reach it
-    app.run(host="0.0.0.0", port=5001, debug=False)
+    import os
+    port = int(os.environ.get("PORT", 5000))
+    print(f"Starting on port {port}")
+    app.run(host="0.0.0.0", port=port, debug=False)
