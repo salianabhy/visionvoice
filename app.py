@@ -23,10 +23,13 @@ app = Flask(__name__)
 # which shows up as "Failed to fetch" with no useful error message.
 CORS(
     app,
-    resources={r"/*": {"origins": "*"}},
-    allow_headers=["Content-Type", "Authorization"],
+    resources={r"/*": {"origins": [
+        "http://localhost:3000",                        # local dev
+        "https://visionvoicee.vercel.app",      # production
+        "https://*.vercel.app",                         # all Vercel preview URLs
+    ]}},
+    allow_headers=["Content-Type"],
     methods=["GET", "POST", "OPTIONS"],
-    supports_credentials=False,
 )
 
 # Directory where generated audio files will be saved and served
