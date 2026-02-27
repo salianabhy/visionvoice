@@ -20,26 +20,66 @@ model     = None
 
 def load_model():
     """
-    Load the large BLIP captioning model from HuggingFace.
-    First run downloads ~1.9GB — subsequent runs load from local cache in ~10s.
+    Load BLIP base captioning model optimized for Render deployment.
+
+    Fixes:
+    - Uses HF_TOKEN for faster downloads
+    - Uses persistent cache directory
+    - Prevents repeated loading
+    - Forces CPU mode
     """
+
     global processor, model
 
+    # Prevent reloading
+    if processor is not None and model is not None:
+        print("✅ BLIP model already loaded.")
+        return processor, model
+
+    import os
+
     MODEL_ID = "Salesforce/blip-image-captioning-base"
-    print(f"Loading {MODEL_ID} (large model — more accurate, first run downloads ~1.9GB)...")
 
-    processor = BlipProcessor.from_pretrained(MODEL_ID)
-    model     = BlipForConditionalGeneration.from_pretrained(
-        MODEL_ID,
-        torch_dtype=torch.float32,   # float16 if you have a GPU with enough VRAM
-    )
+    # HuggingFace token from Render environment
+    HF_TOKEN = os.environ.get("HF_TOKEN")
 
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    model  = model.to(device)
-    model.eval()
+    # Render persistent cache directory
+    CACHE_DIR = "/opt/render/.cache/huggingface"
 
-    print(f"Model ready on {device}.")
-    return processor, model
+    os.makedirs(CACHE_DIR, exist_ok=True)
+
+    print("────────────────────────────")
+    print(f"Loading model: {MODEL_ID}")
+    print("Using cache:", CACHE_DIR)
+    print("Device: CPU")
+    print("First load may take 30–90 seconds")
+    print("────────────────────────────")
+
+    try:
+        processor = BlipProcessor.from_pretrained(
+            MODEL_ID,
+            token=HF_TOKEN,
+            cache_dir=CACHE_DIR
+        )
+
+        model = BlipForConditionalGeneration.from_pretrained(
+            MODEL_ID,
+            token=HF_TOKEN,
+            cache_dir=CACHE_DIR,
+            torch_dtype=torch.float32
+        )
+
+        device = torch.device("cpu")
+        model.to(device)
+        model.eval()
+
+        print("✅ BLIP model loaded successfully")
+
+        return processor, model
+
+    except Exception as e:
+        print("❌ Model loading failed:", str(e))
+        raise RuntimeError(str(e))
 
 
 def generate_caption(image: Image.Image) -> str:
