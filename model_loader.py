@@ -20,66 +20,29 @@ model     = None
 
 def load_model():
     """
-    Load BLIP base captioning model optimized for Render deployment.
-
-    Fixes:
-    - Uses HF_TOKEN for faster downloads
-    - Uses persistent cache directory
-    - Prevents repeated loading
-    - Forces CPU mode
+    Load the large BLIP captioning model from HuggingFace.
+    First run downloads ~1.9GB — subsequent runs load from local cache in ~10s.
     """
-
     global processor, model
 
-    # Prevent reloading
-    if processor is not None and model is not None:
-        print("✅ BLIP model already loaded.")
-        return processor, model
-
-    import os
-
+    # BLIP-base (~900MB download, ~1.5GB RAM) fits on Render free tier (512MB... tight)
+    # BLIP-large (~1.9GB download, ~3.5GB RAM) requires paid tier
+    # Switch back to large if you upgrade to Render Starter ($7/month)
     MODEL_ID = "Salesforce/blip-image-captioning-base"
+    print(f"Loading {MODEL_ID} (base model — fits on Render free tier)...")
 
-    # HuggingFace token from Render environment
-    HF_TOKEN = os.environ.get("HF_TOKEN")
+    processor = BlipProcessor.from_pretrained(MODEL_ID)
+    model     = BlipForConditionalGeneration.from_pretrained(
+        MODEL_ID,
+        torch_dtype=torch.float32,   # float16 if you have a GPU with enough VRAM
+    )
 
-    # Render persistent cache directory
-    CACHE_DIR = "/opt/render/.cache/huggingface"
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    model  = model.to(device)
+    model.eval()
 
-    os.makedirs(CACHE_DIR, exist_ok=True)
-
-    print("────────────────────────────")
-    print(f"Loading model: {MODEL_ID}")
-    print("Using cache:", CACHE_DIR)
-    print("Device: CPU")
-    print("First load may take 30–90 seconds")
-    print("────────────────────────────")
-
-    try:
-        processor = BlipProcessor.from_pretrained(
-            MODEL_ID,
-            token=HF_TOKEN,
-            cache_dir=CACHE_DIR
-        )
-
-        model = BlipForConditionalGeneration.from_pretrained(
-            MODEL_ID,
-            token=HF_TOKEN,
-            cache_dir=CACHE_DIR,
-            torch_dtype=torch.float32
-        )
-
-        device = torch.device("cpu")
-        model.to(device)
-        model.eval()
-
-        print("✅ BLIP model loaded successfully")
-
-        return processor, model
-
-    except Exception as e:
-        print("❌ Model loading failed:", str(e))
-        raise RuntimeError(str(e))
+    print(f"Model ready on {device}.")
+    return processor, model
 
 
 def generate_caption(image: Image.Image) -> str:
@@ -119,11 +82,11 @@ def generate_caption(image: Image.Image) -> str:
     with torch.no_grad():
         output = model.generate(
             **inputs,
-            max_new_tokens=200,       # allow long, detailed descriptions
-            num_beams=10,             # check 10 candidate sequences (vs 5 before)
-            length_penalty=1.5,       # reward longer, more complete sentences
-            repetition_penalty=1.3,   # penalise repeating the same words
-            no_repeat_ngram_size=3,   # no 3-word phrase can appear twice
+            max_new_tokens=120,       # reduced from 200 — saves RAM
+            num_beams=5,              # reduced from 10 — saves RAM on free tier
+            length_penalty=1.2,
+            repetition_penalty=1.3,
+            no_repeat_ngram_size=3,
             early_stopping=True,
         )
 
