@@ -1,105 +1,74 @@
 # model_loader.py
-# Instead of loading BLIP locally (requires 1.5-4GB RAM, crashes Render free tier),
-# we call the HuggingFace Inference API — the model runs on HF's servers,
-# Render just forwards the image and returns the result.
-# RAM usage on Render: ~50MB instead of ~1500MB.
+# Uses huggingface_hub InferenceClient — the official library that handles
+# all API routing, authentication and retries automatically.
+# No manual URL needed — the library knows the correct endpoint.
 
 import os
 import io
-import requests
 from PIL import Image
+from huggingface_hub import InferenceClient
 
-# HuggingFace updated their API routing — old api-inference.huggingface.co returns 410 Gone
-# New URL uses the router.huggingface.co endpoint
-HF_API_URL = "https://router.huggingface.co/hf-inference/models/Salesforce/blip-image-captioning-large"
-
-# Read token from environment variable (set in Render dashboard)
 HF_TOKEN = os.environ.get("HF_API_TOKEN", "")
+_client  = None   # created once on first request
 
 
-def _get_headers():
-    if not HF_TOKEN:
-        raise RuntimeError(
-            "HF_API_TOKEN environment variable is not set. "
-            "Add it in Render → Environment."
-        )
-    return {"Authorization": f"Bearer {HF_TOKEN}"}
+def _get_client():
+    global _client
+    if _client is None:
+        if not HF_TOKEN:
+            raise RuntimeError(
+                "HF_API_TOKEN not set. "
+                "Add it in Render → Environment → HF_API_TOKEN."
+            )
+        _client = InferenceClient(token=HF_TOKEN)
+        print("HuggingFace InferenceClient ready.")
+    return _client
 
 
 def load_model():
-    """
-    No-op — model runs on HuggingFace servers, nothing to load locally.
-    Kept for API compatibility with app.py which calls this on first request.
-    """
-    if not HF_TOKEN:
-        raise RuntimeError(
-            "HF_API_TOKEN not set. Add your HuggingFace token in "
-            "Render → Environment → HF_API_TOKEN."
-        )
-    print("HuggingFace Inference API mode — no local model to load.")
-    print(f"Using model: {HF_API_URL}")
+    """Validate token on first request. No local model to load."""
+    _get_client()
+    print("HuggingFace API mode — model runs on HF servers.")
 
 
 def generate_caption(image: Image.Image) -> str:
     """
-    Send image to HuggingFace Inference API and get back a caption.
-
-    HuggingFace accepts raw image bytes (JPEG).
-    Returns a clean, capitalised sentence.
+    Send image to HuggingFace Inference API using the official client.
+    Uses BLIP-large running on HF's GPU servers.
     """
+    client = _get_client()
+
     # Convert PIL image to JPEG bytes
     buf = io.BytesIO()
-    image.save(buf, format="JPEG", quality=90)
-    image_bytes = buf.getvalue()
+    image.save(buf, format="JPEG", quality=85)
+    buf.seek(0)
 
-    print(f"Sending {len(image_bytes)//1024}KB image to HuggingFace API...")
+    print(f"Sending image to HuggingFace ({buf.getbuffer().nbytes // 1024}KB)...")
 
     try:
-        response = requests.post(
-            HF_API_URL,
-            headers=_get_headers(),
-            data=image_bytes,
-            timeout=60,  # HF cold start can take ~20-30s on first request
+        result = client.image_to_text(
+            buf,
+            model="Salesforce/blip-image-captioning-large",
         )
-    except requests.exceptions.Timeout:
-        raise RuntimeError("HuggingFace API timed out. Try again in a moment.")
-    except requests.exceptions.ConnectionError:
-        raise RuntimeError("Could not connect to HuggingFace API. Check internet connection.")
+        print(f"HF raw result: {result}")
+    except Exception as e:
+        raise RuntimeError(f"HuggingFace API call failed: {str(e)}")
 
-    # Handle HuggingFace-specific errors
-    if response.status_code == 503:
-        # Model is loading on HF side — retry after a few seconds
-        raise RuntimeError(
-            "HuggingFace model is loading (503). "
-            "This takes ~20 seconds on first use. Please try again."
-        )
-    if response.status_code == 401:
-        raise RuntimeError("Invalid HF_API_TOKEN. Check your token in Render environment variables.")
-
-    if not response.ok:
-        raise RuntimeError(
-            f"HuggingFace API error {response.status_code}: {response.text[:200]}"
-        )
-
-    result = response.json()
-    print(f"HuggingFace raw response: {result}")
-
-    # HF returns: [{"generated_text": "a person sitting at a desk"}]
-    if isinstance(result, list) and result:
-        caption = result[0].get("generated_text", "")
-    elif isinstance(result, dict):
-        caption = result.get("generated_text", "")
+    # result is a string or object with .generated_text
+    if hasattr(result, "generated_text"):
+        caption = result.generated_text
+    elif isinstance(result, str):
+        caption = result
     else:
         caption = str(result)
 
-    # Clean up and capitalise
     caption = caption.strip()
     if caption and not caption[0].isupper():
         caption = caption[0].upper() + caption[1:]
     if caption and not caption.endswith("."):
         caption += "."
 
-    print(f"Final caption: {caption}")
+    print(f"Caption: {caption}")
     return caption
 
 
