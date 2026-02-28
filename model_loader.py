@@ -10,7 +10,7 @@ import requests
 from PIL import Image
 
 # HuggingFace Inference API endpoint for BLIP
-HF_API_URL = "https://api-inference.huggingface.co/models/Salesforce/blip-image-captioning-base"
+HF_API_URL = "https://api-inference.huggingface.co/models/Salesforce/blip-image-captioning-large"
 
 # Read token from environment variable (set in Render dashboard)
 HF_TOKEN = os.environ.get("HF_API_TOKEN", "")
