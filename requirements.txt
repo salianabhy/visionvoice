@@ -3,4 +3,4 @@ flask-cors
 Pillow
 gtts
 gunicorn
-requests
+huggingface_hub
