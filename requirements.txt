@@ -1,7 +1,6 @@
 flask
-transformers
-torch
+flask-cors
 Pillow
 gtts
 gunicorn
-flask-cors
+requests
